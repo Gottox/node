@@ -132,7 +132,7 @@ class TLSWrap : public AsyncWrap,
   static void SetVerifyMode(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void EnableSessionCallbacks(
       const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void EnableCertCb(
+  static void EnableHelloParser(
       const v8::FunctionCallbackInfo<v8::Value>& args);
   static void DestroySSL(const v8::FunctionCallbackInfo<v8::Value>& args);
 
@@ -161,6 +161,10 @@ class TLSWrap : public AsyncWrap,
   // If true - delivered EOF to the js-land, either after `close_notify`, or
   // after the `UV_EOF` on socket.
   bool eof_;
+
+#ifdef SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
+  v8::Persistent<v8::Value> sni_context_;
+#endif  // SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
 };
 
 }  // namespace node
