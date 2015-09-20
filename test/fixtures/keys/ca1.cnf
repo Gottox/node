@@ -5,7 +5,6 @@ distinguished_name     = req_distinguished_name
 attributes             = req_attributes
 prompt                 = no
 output_password        = password
-x509_extensions        = v3_ca
 
 [ req_distinguished_name ]
 C                      = US
@@ -19,5 +18,3 @@ emailAddress           = ry@tinyclouds.org
 [ req_attributes ]
 challengePassword              = A challenge password
 
-[ v3_ca ]
-basicConstraints = CA:TRUE

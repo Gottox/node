@@ -43,7 +43,7 @@ server.listen(common.PORT, function() {
 
     var issuer = peerCert.issuerCertificate;
     assert.ok(issuer.issuerCertificate === issuer);
-    assert.equal(issuer.serialNumber, '8DF21C01468AF393');
+    assert.equal(issuer.serialNumber, 'B5090C899FC2FF93');
     verified = true;
     server.close();
   });
