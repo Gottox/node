@@ -53,7 +53,8 @@ var testCases = [
       port: common.PORT,
       rejectUnauthorized: true
     },
-    // LibreSSL returns CERT_UNTRUSTED in this case, OpenSSL UNABLE_TO_GET_ISSUER_CERT_LOCALLY.
+    // LibreSSL returns CERT_UNTRUSTED in this case, OpenSSL
+    // returns UNABLE_TO_GET_ISSUER_CERT_LOCALLY.
     errorCode: 'CERT_UNTRUSTED'
     //errorCode: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY'
   }
