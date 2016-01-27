@@ -22,7 +22,11 @@ var constants = require('constants');
 var fs = require('fs');
 var join = require('path').join;
 
-var pfx = fs.readFileSync(join(common.fixturesDir, 'keys', 'agent1-pfx.pem'));
+test({ response: false }, function() {
+  test({ response: 'hello world' }, function() {
+    test({ ocsp: false });
+  });
+});
 
 function test(testOptions, cb) {
 
@@ -41,13 +45,6 @@ function test(testOptions, cb) {
   var clientSecure = 0;
   var ocspCount = 0;
   var ocspResponse;
-
-  if (testOptions.pfx) {
-    delete options.key;
-    delete options.cert;
-    options.pfx = testOptions.pfx;
-    options.passphrase = testOptions.passphrase;
-  }
 
   var server = tls.createServer(options, function(cleartext) {
     cleartext.on('error', function(er) {
@@ -108,23 +105,3 @@ function test(testOptions, cb) {
     assert.equal(ocspCount, 1);
   });
 }
-
-var tests = [
-  { response: false },
-  { response: 'hello world' },
-  { ocsp: false }
-];
-
-if (!common.hasFipsCrypto) {
-  tests.push({ pfx: pfx, passphrase: 'sample', response: 'hello pfx' });
-}
-
-function runTests(i) {
-  if (i === tests.length) return;
-
-  test(tests[i], common.mustCall(function() {
-    runTests(i + 1);
-  }));
-}
-
-runTests(0);
