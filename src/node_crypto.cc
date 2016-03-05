@@ -129,8 +129,6 @@ template class SSLWrap<TLSWrap>;
 template void SSLWrap<TLSWrap>::AddMethods(Environment* env,
                                            Local<FunctionTemplate> t);
 template void SSLWrap<TLSWrap>::InitNPN(SecureContext* sc);
-template void SSLWrap<TLSWrap>::SetSNIContext(SecureContext* sc);
-template int SSLWrap<TLSWrap>::SetCACerts(SecureContext* sc);
 template SSL_SESSION* SSLWrap<TLSWrap>::GetSessionCallback(
     SSL* s,
     unsigned char* key,
@@ -2027,30 +2025,6 @@ void SSLWrap<Base>::DestroySSL() {
 }
 
 
-template <class Base>
-void SSLWrap<Base>::SetSNIContext(SecureContext* sc) {
-  InitNPN(sc);
-  CHECK_EQ(SSL_set_SSL_CTX(ssl_, sc->ctx_), sc->ctx_);
-
-  SetCACerts(sc);
-}
-
-
-template <class Base>
-int SSLWrap<Base>::SetCACerts(SecureContext* sc) {
-  int err = SSL_set1_verify_cert_store(ssl_, SSL_CTX_get_cert_store(sc->ctx_));
-  if (err != 1)
-    return err;
-
-  STACK_OF(X509_NAME)* list = SSL_dup_CA_list(
-      SSL_CTX_get_client_CA_list(sc->ctx_));
-
-  // NOTE: `SSL_set_client_CA_list` takes the ownership of `list`
-  SSL_set_client_CA_list(ssl_, list);
-  return 1;
-}
-
-
 void Connection::OnClientHelloParseEnd(void* arg) {
   Connection* conn = static_cast<Connection*>(arg);
 
@@ -2360,7 +2334,8 @@ int Connection::SelectSNIContextCallback_(SSL *s, int *ad, void* arg) {
       if (secure_context_constructor_template->HasInstance(ret)) {
         conn->sniContext_.Reset(env->isolate(), ret);
         SecureContext* sc = Unwrap<SecureContext>(ret.As<Object>());
-        conn->SetSNIContext(sc);
+        InitNPN(sc);
+        SSL_set_SSL_CTX(s, sc->ctx_);
       } else {
         return SSL_TLSEXT_ERR_NOACK;
       }
