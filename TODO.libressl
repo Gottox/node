@@ -1,0 +1,38 @@
+Failing tests:
+
+=== release test-tls-client-mindhsize ===                                      
+Path: parallel/test-tls-client-mindhsize
+Trace: WARNING: DH parameter is less than 2048 bits
+    at Object.createSecureContext (_tls_common.js:105:15)
+    at new Server (_tls_wrap.js:753:25)
+    at Object.TLSSocket._init.ssl.onclienthello.exports.createServer (_tls_wrap.js:846:10)
+    at test (/home/tox/src/node/test/parallel/test-tls-client-mindhsize.js:32:20)
+    at testDHE1024 (/home/tox/src/node/test/parallel/test-tls-client-mindhsize.js:67:3)
+    at Object.<anonymous> (/home/tox/src/node/test/parallel/test-tls-client-mindhsize.js:76:1)
+    at Module._compile (module.js:413:34)
+    at Object.Module._extensions..js (module.js:422:10)
+    at Module.load (module.js:357:32)
+    at Function.Module._load (module.js:314:12)
+
+assert.js:89
+  throw new assert.AssertionError({
+  ^
+AssertionError: 2 == 1
+    at process.<anonymous> (/home/tox/src/node/test/parallel/test-tls-client-mindhsize.js:91:10)
+    at emitOne (events.js:95:20)
+    at process.emit (events.js:182:7)
+Command: out/Release/node /home/tox/src/node/test/parallel/test-tls-client-mindhsize.js
+=== release test-tls-cnnic-whitelist ===                         
+Path: parallel/test-tls-cnnic-whitelist
+Command: out/Release/node /home/tox/src/node/test/parallel/test-tls-cnnic-whitelist.js
+--- CRASHED ---
+=== release test-tls-ocsp-callback ===                                  
+Path: parallel/test-tls-ocsp-callback
+Command: out/Release/node /home/tox/src/node/test/parallel/test-tls-ocsp-callback.js
+--- CRASHED ---
+=== release test-tls-pfx-gh-5100-regr ===                       
+Path: parallel/test-tls-pfx-gh-5100-regr
+Command: out/Release/node /home/tox/src/node/test/parallel/test-tls-pfx-gh-5100-regr.js
+--- CRASHED ---
+[01:13|% 100|+ 1032|-   4]: Done                                               
+
