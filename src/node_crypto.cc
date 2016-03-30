@@ -164,8 +164,6 @@ template int SSLWrap<TLSWrap>::TLSExtStatusCallback(SSL* s, void* arg);
 #endif
 
 template void SSLWrap<TLSWrap>::DestroySSL();
-template int SSLWrap<TLSWrap>::SSLCertCallback(SSL* s, void* arg);
-template void SSLWrap<TLSWrap>::WaitForCertCb(CertCb cb, void* arg);
 
 #ifdef TLSEXT_TYPE_application_layer_protocol_negotiation
 template int SSLWrap<TLSWrap>::SelectALPNCallback(
@@ -518,8 +516,7 @@ int SSL_CTX_use_certificate_chain(SSL_CTX* ctx,
     for (int i = 0; i < sk_X509_num(extra_certs); i++) {
       X509* ca = sk_X509_value(extra_certs, i);
 
-      // NOTE: Increments reference count on `ca`
-      r = SSL_CTX_add1_chain_cert(ctx, ca);
+      r = SSL_CTX_add_extra_chain_cert(ctx, ca);
 
       if (!r) {
         ret = 0;
@@ -1045,7 +1042,7 @@ void SecureContext::SetTicketKeys(const FunctionCallbackInfo<Value>& args) {
 void SecureContext::SetFreeListLength(const FunctionCallbackInfo<Value>& args) {
   SecureContext* wrap = Unwrap<SecureContext>(args.Holder());
 
-  wrap->ctx_->freelist_max_len = args[0]->Int32Value();
+  // wrap->ctx_->freelist_max_len = args[0]->Int32Value();
 }
 
 
@@ -1182,14 +1179,12 @@ void SSLWrap<Base>::AddMethods(Environment* env, Local<FunctionTemplate> t) {
   env->SetProtoMethod(t, "verifyError", VerifyError);
   env->SetProtoMethod(t, "getCurrentCipher", GetCurrentCipher);
   env->SetProtoMethod(t, "endParser", EndParser);
-  env->SetProtoMethod(t, "certCbDone", CertCbDone);
   env->SetProtoMethod(t, "renegotiate", Renegotiate);
   env->SetProtoMethod(t, "shutdownSSL", Shutdown);
   env->SetProtoMethod(t, "getTLSTicket", GetTLSTicket);
   env->SetProtoMethod(t, "newSessionDone", NewSessionDone);
   env->SetProtoMethod(t, "setOCSPResponse", SetOCSPResponse);
   env->SetProtoMethod(t, "requestOCSP", RequestOCSP);
-  env->SetProtoMethod(t, "getEphemeralKeyInfo", GetEphemeralKeyInfo);
   env->SetProtoMethod(t, "getProtocol", GetProtocol);
 
 #ifdef SSL_set_max_send_fragment
@@ -1805,50 +1800,6 @@ void SSLWrap<Base>::RequestOCSP(
 }
 
 
-template <class Base>
-void SSLWrap<Base>::GetEphemeralKeyInfo(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Base* w = Unwrap<Base>(args.Holder());
-  Environment* env = Environment::GetCurrent(args);
-
-  CHECK_NE(w->ssl_, nullptr);
-
-  // tmp key is available on only client
-  if (w->is_server())
-    return args.GetReturnValue().SetNull();
-
-  Local<Object> info = Object::New(env->isolate());
-
-  EVP_PKEY* key;
-
-  if (SSL_get_server_tmp_key(w->ssl_, &key)) {
-    switch (EVP_PKEY_id(key)) {
-      case EVP_PKEY_DH:
-        info->Set(env->type_string(),
-                  FIXED_ONE_BYTE_STRING(env->isolate(), "DH"));
-        info->Set(env->size_string(),
-                  Integer::New(env->isolate(), EVP_PKEY_bits(key)));
-        break;
-      case EVP_PKEY_EC:
-        {
-          EC_KEY* ec = EVP_PKEY_get1_EC_KEY(key);
-          int nid = EC_GROUP_get_curve_name(EC_KEY_get0_group(ec));
-          EC_KEY_free(ec);
-          info->Set(env->type_string(),
-                    FIXED_ONE_BYTE_STRING(env->isolate(), "ECDH"));
-          info->Set(env->name_string(),
-                    OneByteString(args.GetIsolate(), OBJ_nid2sn(nid)));
-          info->Set(env->size_string(),
-                    Integer::New(env->isolate(), EVP_PKEY_bits(key)));
-        }
-    }
-    EVP_PKEY_free(key);
-  }
-
-  return args.GetReturnValue().Set(info);
-}
-
-
 #ifdef SSL_set_max_send_fragment
 template <class Base>
 void SSLWrap<Base>::SetMaxSendFragment(
@@ -2234,129 +2185,6 @@ int SSLWrap<Base>::TLSExtStatusCallback(SSL* s, void* arg) {
 
 
 template <class Base>
-void SSLWrap<Base>::WaitForCertCb(CertCb cb, void* arg) {
-  cert_cb_ = cb;
-  cert_cb_arg_ = arg;
-}
-
-
-template <class Base>
-int SSLWrap<Base>::SSLCertCallback(SSL* s, void* arg) {
-  Base* w = static_cast<Base*>(SSL_get_app_data(s));
-
-  if (!w->is_server())
-    return 1;
-
-  if (!w->is_waiting_cert_cb())
-    return 1;
-
-  if (w->cert_cb_running_)
-    return -1;
-
-  Environment* env = w->env();
-  HandleScope handle_scope(env->isolate());
-  Context::Scope context_scope(env->context());
-  w->cert_cb_running_ = true;
-
-  Local<Object> info = Object::New(env->isolate());
-
-  SSL_SESSION* sess = SSL_get_session(s);
-  if (sess != nullptr) {
-    if (sess->tlsext_hostname == nullptr) {
-      info->Set(env->servername_string(), String::Empty(env->isolate()));
-    } else {
-      Local<String> servername = OneByteString(env->isolate(),
-                                               sess->tlsext_hostname,
-                                               strlen(sess->tlsext_hostname));
-      info->Set(env->servername_string(), servername);
-    }
-    info->Set(env->tls_ticket_string(),
-              Boolean::New(env->isolate(), sess->tlsext_ticklen != 0));
-  }
-
-  bool ocsp = false;
-#ifdef NODE__HAVE_TLSEXT_STATUS_CB
-  ocsp = s->tlsext_status_type == TLSEXT_STATUSTYPE_ocsp;
-#endif
-
-  info->Set(env->ocsp_request_string(), Boolean::New(env->isolate(), ocsp));
-
-  Local<Value> argv[] = { info };
-  w->MakeCallback(env->oncertcb_string(), ARRAY_SIZE(argv), argv);
-
-  if (!w->cert_cb_running_)
-    return 1;
-
-  // Performing async action, wait...
-  return -1;
-}
-
-
-template <class Base>
-void SSLWrap<Base>::CertCbDone(const FunctionCallbackInfo<Value>& args) {
-  Base* w = Unwrap<Base>(args.Holder());
-  Environment* env = w->env();
-
-  CHECK(w->is_waiting_cert_cb() && w->cert_cb_running_);
-
-  Local<Object> object = w->object();
-  Local<Value> ctx = object->Get(env->sni_context_string());
-  Local<FunctionTemplate> cons = env->secure_context_constructor_template();
-
-  // Not an object, probably undefined or null
-  if (!ctx->IsObject())
-    goto fire_cb;
-
-  if (cons->HasInstance(ctx)) {
-    SecureContext* sc = Unwrap<SecureContext>(ctx.As<Object>());
-    w->sni_context_.Reset();
-    w->sni_context_.Reset(env->isolate(), ctx);
-
-    int rv;
-
-    // NOTE: reference count is not increased by this API methods
-    X509* x509 = SSL_CTX_get0_certificate(sc->ctx_);
-    EVP_PKEY* pkey = SSL_CTX_get0_privatekey(sc->ctx_);
-    STACK_OF(X509)* chain;
-
-    rv = SSL_CTX_get0_chain_certs(sc->ctx_, &chain);
-    if (rv)
-      rv = SSL_use_certificate(w->ssl_, x509);
-    if (rv)
-      rv = SSL_use_PrivateKey(w->ssl_, pkey);
-    if (rv && chain != nullptr)
-      rv = SSL_set1_chain(w->ssl_, chain);
-    if (rv)
-      rv = w->SetCACerts(sc);
-    if (!rv) {
-      unsigned long err = ERR_get_error();
-      if (!err)
-        return env->ThrowError("CertCbDone");
-      return ThrowCryptoError(env, err);
-    }
-  } else {
-    // Failure: incorrect SNI context object
-    Local<Value> err = Exception::TypeError(env->sni_context_err_string());
-    w->MakeCallback(env->onerror_string(), 1, &err);
-    return;
-  }
-
- fire_cb:
-  CertCb cb;
-  void* arg;
-
-  cb = w->cert_cb_;
-  arg = w->cert_cb_arg_;
-
-  w->cert_cb_running_ = false;
-  w->cert_cb_ = nullptr;
-  w->cert_cb_arg_ = nullptr;
-
-  cb(arg);
-}
-
-
-template <class Base>
 void SSLWrap<Base>::SSLGetter(Local<String> property,
                               const PropertyCallbackInfo<Value>& info) {
   SSL* ssl = Unwrap<Base>(info.This())->ssl_;
@@ -2387,10 +2215,6 @@ void SSLWrap<Base>::SetSNIContext(SecureContext* sc) {
 
 template <class Base>
 int SSLWrap<Base>::SetCACerts(SecureContext* sc) {
-  int err = SSL_set1_verify_cert_store(ssl_, SSL_CTX_get_cert_store(sc->ctx_));
-  if (err != 1)
-    return err;
-
   STACK_OF(X509_NAME)* list = SSL_dup_CA_list(
       SSL_CTX_get_client_CA_list(sc->ctx_));
 
@@ -2482,10 +2306,6 @@ int Connection::HandleSSLError(const char* func,
 
   } else if (err == SSL_ERROR_WANT_READ) {
     DEBUG_PRINT("[%p] SSL: %s want read\n", ssl_, func);
-    return 0;
-
-  } else if (err == SSL_ERROR_WANT_X509_LOOKUP) {
-    DEBUG_PRINT("[%p] SSL: %s want x509 lookup\n", ssl_, func);
     return 0;
 
   } else if (err == SSL_ERROR_ZERO_RETURN) {
@@ -2668,7 +2488,7 @@ inline int VerifyCallback(int preverify_ok, X509_STORE_CTX* ctx) {
   SSL* ssl = static_cast<SSL*>(
       X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx()));
 
-  if (SSL_is_server(ssl))
+  if (ssl->server)
     return 1;
 
   // Client needs to check if the server cert is listed in the
@@ -2695,7 +2515,7 @@ int Connection::SelectSNIContextCallback_(SSL *s, int *ad, void* arg) {
 
     // Call the SNI callback and use its return value as context
     if (!conn->sniObject_.IsEmpty()) {
-      conn->sni_context_.Reset();
+      conn->sniContext_.Reset();
 
       Local<Object> sni_obj = PersistentToLocal(env->isolate(),
                                                 conn->sniObject_);
@@ -2711,7 +2531,7 @@ int Connection::SelectSNIContextCallback_(SSL *s, int *ad, void* arg) {
       Local<FunctionTemplate> secure_context_constructor_template =
           env->secure_context_constructor_template();
       if (secure_context_constructor_template->HasInstance(ret)) {
-        conn->sni_context_.Reset(env->isolate(), ret);
+        conn->sniContext_.Reset(env->isolate(), ret);
         SecureContext* sc = Unwrap<SecureContext>(ret.As<Object>());
         conn->SetSNIContext(sc);
       } else {
@@ -2748,8 +2568,6 @@ void Connection::New(const FunctionCallbackInfo<Value>& args) {
     SSL_set_info_callback(conn->ssl_, SSLInfoCallback);
 
   InitNPN(sc);
-
-  SSL_set_cert_cb(conn->ssl_, SSLWrap<Connection>::SSLCertCallback, conn);
 
 #ifdef SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
   if (is_server) {
