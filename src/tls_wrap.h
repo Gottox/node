@@ -164,7 +164,7 @@ class TLSWrap : public AsyncWrap,
 
 #ifdef SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
   v8::Persistent<v8::Value> sni_context_;
-#endif // SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
+#endif  // SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
 };
 
 }  // namespace node
